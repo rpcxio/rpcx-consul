@@ -35,6 +35,7 @@ type ConsulRegisterPlugin struct {
 	metasLock      sync.RWMutex
 	metas          map[string]string
 	UpdateInterval time.Duration
+	Expired        time.Duration
 
 	Options *store.Config
 	kv      store.Store
@@ -91,6 +92,10 @@ func NewConsulRegisterPlugin(o ...ConsulOpt) *ConsulRegisterPlugin {
 
 // Start starts to connect consul cluster
 func (p *ConsulRegisterPlugin) Start() error {
+	if p.Expired == 0 {
+		p.Expired = p.UpdateInterval
+	}
+
 	if p.done == nil {
 		p.done = make(chan struct{})
 	}
@@ -112,7 +117,7 @@ func (p *ConsulRegisterPlugin) Start() error {
 		p.BasePath = p.BasePath[1:]
 	}
 
-	err := p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true})
+	err := p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true, TTL: p.UpdateInterval + p.Expired})
 	if err != nil {
 		log.Errorf("cannot create consul path %s: %v", p.BasePath, err)
 		close(p.done)
@@ -150,7 +155,7 @@ func (p *ConsulRegisterPlugin) Start() error {
 							meta := p.metas[name]
 							p.metasLock.RUnlock()
 
-							err = p.kv.Put(nodePath, []byte(meta), &store.WriteOptions{TTL: p.UpdateInterval * 2})
+							err = p.kv.Put(nodePath, []byte(meta), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 							if err != nil {
 								log.Errorf("cannot re-create consul path %s: %v", nodePath, err)
 							}
@@ -159,7 +164,7 @@ func (p *ConsulRegisterPlugin) Start() error {
 							for key, value := range extra {
 								v.Set(key, value)
 							}
-							_ = p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval * 2})
+							_ = p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 						}
 					}
 				}
@@ -254,7 +259,7 @@ func (p *ConsulRegisterPlugin) Register(name string, rcvr interface{}, metadata 
 	}
 
 	nodePath = fmt.Sprintf("%s/%s/%s", p.BasePath, name, p.ServiceAddress)
-	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval * 2})
+	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 	if err != nil {
 		log.Errorf("cannot create consul path %s: %v", nodePath, err)
 		return err
