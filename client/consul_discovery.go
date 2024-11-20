@@ -223,13 +223,11 @@ func (d *ConsulDiscovery) watch() {
 						defer func() {
 							recover()
 						}()
-						timer := time.NewTimer(time.Minute)
 						select {
 						case ch <- pairs:
-						case <-timer.C:
+						default:
 							log.Warn("chan is full and new change has been dropped")
 						}
-						timer.Stop()
 					}()
 				}
 				d.mu.Unlock()
